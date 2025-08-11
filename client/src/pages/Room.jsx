@@ -16,6 +16,10 @@ export default function Room() {
   const localStreamRef = useRef(null)
   const gridRef = useRef(null)
   const peersMetaRef = useRef(new Map()) // id -> { isHost, displayName }
+  const scoresRef = useRef({})
+  const [scoresState, setScoresState] = useState({})
+  const [announcement, setAnnouncement] = useState('')
+  const [spotlight, setSpotlight] = useState(null)
   const revealedRef = useRef(false)
   const pendingCandidatesRef = useRef(new Map()) // id -> RTCIceCandidateInit[]
 
@@ -23,18 +27,24 @@ export default function Room() {
     const existing = document.getElementById(`vid-${id}`)
     if (existing) {
       if (existing.srcObject !== stream) existing.srcObject = stream
+      if (spotlight === id) existing.parentElement?.classList.add('spotlight')
       return existing
     }
+    const wrap = document.createElement('div')
+    wrap.className = 'video-wrapper'
+    if (spotlight === id) wrap.classList.add('spotlight')
     const v = document.createElement('video')
     v.id = `vid-${id}`
     v.autoplay = true
     v.playsInline = true
     v.muted = isSelf
-    v.style.width = '320px'
-    v.style.borderRadius = '12px'
-    v.style.boxShadow = '0 6px 18px rgba(0,0,0,0.2)'
     v.srcObject = stream
-    gridRef.current?.appendChild(v)
+    const badge = document.createElement('div')
+    badge.className = 'badge'
+    badge.textContent = isSelf ? 'You' : (peersMetaRef.current.get(id)?.displayName || 'Peer')
+    wrap.appendChild(v)
+    wrap.appendChild(badge)
+    gridRef.current?.appendChild(wrap)
     return v
   }
 
@@ -225,6 +235,29 @@ export default function Room() {
                 }
               }
             }
+            if (event === 'SCORES_UPDATE') {
+              scoresRef.current = payload.payload.data?.scores || {}
+              setScoresState(scoresRef.current)
+            }
+            if (event === 'ANNOUNCEMENT') {
+              setAnnouncement(payload.payload.data?.text || '')
+            }
+            if (event === 'SPOTLIGHT') {
+              setSpotlight(payload.payload.data?.targetId)
+              document.querySelectorAll('.video-wrapper').forEach(el=> el.classList.remove('spotlight'))
+              const el = document.getElementById(`vid-${payload.payload.data?.targetId}`)?.parentElement
+              if (el) el.classList.add('spotlight')
+            }
+            if (event === 'CLEAR_SPOTLIGHT') {
+              setSpotlight(null)
+              document.querySelectorAll('.video-wrapper').forEach(el=> el.classList.remove('spotlight'))
+            }
+            if (event === 'MUTE' && payload.payload.data?.targetId === me) {
+              localStreamRef.current?.getAudioTracks().forEach(t => t.enabled = false)
+            }
+            if (event === 'UNMUTE' && payload.payload.data?.targetId === me) {
+              localStreamRef.current?.getAudioTracks().forEach(t => t.enabled = true)
+            }
           }
         } catch (err) {
           console.error('WS message handling error', err)
@@ -249,10 +282,22 @@ export default function Room() {
   }, [roomId])
 
   return (
-    <div style={{ fontFamily: 'system-ui, sans-serif', padding: 16 }}>
-      <h2>Room: {roomId}</h2>
-      <p style={{opacity: 0.7}}>{wsOpen ? 'Connected to signaling' : 'Connecting...'}</p>
-      <div ref={gridRef} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }} />
+    <div className="layout">
+      <div className="container">
+        <h2 style={{marginTop:0}}>Room {roomId}</h2>
+        <div style={{opacity:.6, fontSize:14, marginBottom:12}}>{wsOpen ? 'Connected' : 'Connecting...'}</div>
+        <div ref={gridRef} className="grid-videos" />
+      </div>
+      {announcement && <div className="announcement-banner">{announcement}</div>}
+      {Object.keys(scoresState).length>0 && (
+        <div className="scoreboard-overlay panel">
+          <h4>Scores</h4>
+          {Object.entries(scoresState).sort((a,b)=> (b[1]??0)-(a[1]??0)).map(([id, sc]) => {
+            const meta = peersMetaRef.current.get(id) || {}
+            return <div key={id} style={{display:'flex', justifyContent:'space-between', fontSize:12, padding:'2px 0'}}><span style={{maxWidth:130, overflow:'hidden', textOverflow:'ellipsis'}} title={meta.displayName||id}>{meta.displayName||id.slice(0,6)}</span><strong>{sc}</strong></div>
+          })}
+        </div>
+      )}
     </div>
   )
 }

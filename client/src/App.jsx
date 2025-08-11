@@ -43,36 +43,42 @@ export default function App() {
   }, [showPerms]);
 
   return (
-    <div style={{ fontFamily: 'system-ui, sans-serif', padding: 24 }}>
-      <h1>🎤 Game Show MVP</h1>
-      {showPerms && (
-        <div style={{ background: '#fffbe6', border: '1px solid #ffe58f', borderRadius: 8, padding: 16, marginBottom: 24 }}>
-          <h2>Permissions Request</h2>
-          <p>This app needs access to:</p>
-          <ul>
-            <li>Camera</li>
-            <li>Microphone</li>
-            <li>Screen (for sharing)</li>
-          </ul>
-          <button onClick={() => setShowPerms(false)} style={{ marginTop: 8 }}>Continue</button>
-          <div style={{ marginTop: 12 }}>
-            <strong>Results:</strong>
-            <ul>
-              <li>Camera: {permResults.camera || 'pending'}</li>
-              <li>Microphone: {permResults.microphone || 'pending'}</li>
-              <li>Screen: {permResults.screen || 'pending'}</li>
+    <div className="layout">
+      <div className="container" style={{maxWidth:640}}>
+        <h1 style={{marginTop:0, fontSize:38, background:'linear-gradient(90deg,#f59f00,#e8590c)', WebkitBackgroundClip:'text', color:'transparent'}}>Game Show</h1>
+        {showPerms && (
+          <div className="panel" style={{marginBottom:32}}>
+            <h2 style={{marginTop:0}}>Permissions</h2>
+            <p style={{marginTop:4}}>This app needs access to your:</p>
+            <ul style={{lineHeight:1.5, marginTop:4}}>
+              <li>Camera</li>
+              <li>Microphone</li>
+              <li>Screen (for optional sharing)</li>
             </ul>
+            <button onClick={() => setShowPerms(false)} style={{marginTop:8}}>Continue</button>
+            <div style={{marginTop:14, fontSize:14}}>
+              <strong>Results:</strong>
+              <ul style={{lineHeight:1.4}}>
+                <li>Camera: {permResults.camera || 'pending'}</li>
+                <li>Microphone: {permResults.microphone || 'pending'}</li>
+                <li>Screen: {permResults.screen || 'pending'}</li>
+              </ul>
+            </div>
           </div>
-        </div>
-      )}
-      {!showPerms && (
-        <>
-          <p>Enter a Room ID to join as audience or open host tools.</p>
-          <input value={roomId} onChange={(e) => setRoomId(e.target.value)} />
-          <button onClick={() => nav(`/room/${roomId}`)}>Join Audience</button>
-          <button onClick={() => nav(`/host/${roomId}`)}>Open Host Tools</button>
-        </>
-      )}
+        )}
+        {!showPerms && (
+          <div className="panel" style={{display:'flex', flexDirection:'column', gap:14}}>
+            <label style={{fontSize:14, opacity:.8}}>Room ID</label>
+            <input value={roomId} onChange={(e) => setRoomId(e.target.value)} placeholder="e.g. showtime" />
+            <div style={{display:'flex', gap:10, flexWrap:'wrap'}}>
+              <button onClick={() => nav(`/room/${roomId}`)}>Join Audience</button>
+              <button onClick={() => nav(`/host/${roomId}`)} className="secondary">Open Host Panel</button>
+            </div>
+            <p style={{fontSize:12, opacity:.55, marginTop:4}}>Share the room ID with participants so they can join.</p>
+          </div>
+        )}
+        <p style={{fontSize:12, opacity:.4, marginTop:48}}>MVP prototype — media not persisted; refresh clears state.</p>
+      </div>
     </div>
   );
 }

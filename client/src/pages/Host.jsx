@@ -11,6 +11,11 @@ export default function Host() {
   const { roomId } = useParams()
   const [me, setMe] = useState(null)
   const [wsOpen, setWsOpen] = useState(false)
+  const [participants, setParticipants] = useState(new Map()) // id -> { isHost, displayName }
+  const [scores, setScores] = useState({})
+  const [announcement, setAnnouncement] = useState('')
+  const [spotlight, setSpotlight] = useState(null)
+  const annInputRef = useRef(null)
   const wsRef = useRef(null)
   const pcRef = useRef(new Map())
   const localStreamRef = useRef(null)
@@ -199,6 +204,36 @@ export default function Host() {
     }
   }
 
+  function updateScore(id, value) {
+    const v = parseInt(value, 10)
+    if (Number.isNaN(v)) return
+    const next = { ...scores, [id]: v }
+    setScores(next)
+    sendHostEvent('SCORES_UPDATE', { scores: next })
+  }
+
+  function toggleMute(id, shouldMute) {
+    sendHostEvent(shouldMute ? 'MUTE' : 'UNMUTE', { targetId: id })
+  }
+
+  function setSpotlightTarget(id) {
+    if (id === spotlight) {
+      setSpotlight(null)
+      sendHostEvent('CLEAR_SPOTLIGHT', {})
+    } else {
+      setSpotlight(id)
+      sendHostEvent('SPOTLIGHT', { targetId: id })
+    }
+  }
+
+  function broadcastAnnouncement() {
+    const text = annInputRef.current?.value?.trim()
+    if (!text) return
+    setAnnouncement(text)
+    sendHostEvent('ANNOUNCEMENT', { text })
+    annInputRef.current.value = ''
+  }
+
   useEffect(() => {
     let closed = false
     let ws = null
@@ -233,19 +268,16 @@ export default function Host() {
 
             if (type === 'PEERS') {
               setMe(payload.clientId)
-              // payload.peers contains objects { id, isHost }
-              for (const p of payload.peers) {
-                const id = p.id
-                if (!id) continue
-                if (!pcRef.current.has(id) && !pendingCalls.current.has(id)) {
-                  await callPeer(id)
-                }
+              const map = new Map()
+              for (const p of payload.peers) map.set(p.id, { isHost: !!p.isHost, displayName: p.displayName })
+              setParticipants(map)
+              for (const id of map.keys()) {
+                if (!pcRef.current.has(id) && !pendingCalls.current.has(id)) await callPeer(id)
               }
             }
             if (type === 'PEER_JOINED') {
-              if (payload.clientId !== me && !pcRef.current.has(payload.clientId)) {
-                await callPeer(payload.clientId)
-              }
+              if (payload.clientId !== me && !pcRef.current.has(payload.clientId)) await callPeer(payload.clientId)
+              setParticipants(prev => new Map(prev).set(payload.clientId, { isHost: !!payload.isHost, displayName: payload.displayName }))
             }
             if (type === 'SIGNAL') {
               const { fromId, data } = payload
@@ -261,6 +293,15 @@ export default function Host() {
               pendingCalls.current.delete(clientId)
               const el = document.getElementById(`vid-${clientId}`)
               el?.remove()
+              setParticipants(prev => { const next = new Map(prev); next.delete(clientId); return next })
+            }
+            if (type === 'HOST_EVENT') {
+              const { event, data } = payload
+              if (event === 'ACK_SCOREBOARD') return
+              if (event === 'SCORES_UPDATE') setScores(data.scores || {})
+              if (event === 'ANNOUNCEMENT') setAnnouncement(data.text || '')
+              if (event === 'SPOTLIGHT') setSpotlight(data.targetId)
+              if (event === 'CLEAR_SPOTLIGHT') setSpotlight(null)
             }
           } catch (error) {
             console.error('Error handling WebSocket message:', error)
@@ -316,58 +357,49 @@ export default function Host() {
   }, [roomId])  // Only depend on roomId
 
   return (
-    <div style={{ fontFamily: 'system-ui, sans-serif', padding: 16 }}>
-      <h2>Host Panel — Room: {roomId}</h2>
-      <p style={{opacity: 0.7}}>
-        {wsOpen ? '✅ Connected to signaling' : '🔄 Connecting...'}
-      </p>
-
-      <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-        <button 
-          onClick={() => sendHostEvent('SHOW_TITLE')}
-          disabled={!wsOpen}
-        >
-          Show Title
-        </button>
-        <button 
-          onClick={() => sendHostEvent('HIDE_TITLE')}
-          disabled={!wsOpen}
-        >
-          Hide Title
-        </button>
-        <button 
-          onClick={() => sendHostEvent('START_ROUND', { n: 1 })}
-          disabled={!wsOpen}
-        >
-          Start Round 1
-        </button>
-        <button 
-          onClick={() => sendHostEvent('END_ROUND')}
-          disabled={!wsOpen}
-        >
-          End Round
-        </button>
-        <button
-          onClick={() => sendHostEvent('REVEAL_CONTESTANTS')}
-          disabled={!wsOpen}
-          style={{ marginLeft: 16 }}
-        >
-          Reveal Contestants
-        </button>
-        <button
-          onClick={() => sendHostEvent('HIDE_CONTESTANTS')}
-          disabled={!wsOpen}
-        >
-          Hide Contestants
-        </button>
+    <div className="layout">
+      <div className="container host-layout">
+        <div className="panel" style={{display:'flex', flexDirection:'column', gap:12}}>
+          <h2 style={{margin:'0 0 4px'}}>Host — Room {roomId}</h2>
+            <div style={{fontSize:12, opacity:.65, marginBottom:4}}>{wsOpen ? 'Connected' : 'Connecting...'}</div>
+            <div className="toolbar">
+              <button onClick={() => sendHostEvent('REVEAL_CONTESTANTS')} disabled={!wsOpen}>Reveal</button>
+              <button onClick={() => sendHostEvent('HIDE_CONTESTANTS')} disabled={!wsOpen} className="secondary">Hide</button>
+              <button onClick={() => sendHostEvent('START_ROUND', { n: 1 })} disabled={!wsOpen}>Start R1</button>
+              <button onClick={() => sendHostEvent('END_ROUND')} disabled={!wsOpen} className="secondary">End Round</button>
+              <button onClick={() => { setScores({}); sendHostEvent('SCORES_UPDATE',{scores:{}}) }} disabled={!wsOpen} className="secondary">Reset Scores</button>
+              <button onClick={() => { setAnnouncement(''); sendHostEvent('ANNOUNCEMENT',{text:''}) }} disabled={!wsOpen} className="secondary">Clear Banner</button>
+            </div>
+            <textarea ref={annInputRef} rows={2} placeholder="Announcement..." style={{resize:'vertical'}} />
+            <button onClick={broadcastAnnouncement} disabled={!wsOpen} className="secondary">Broadcast</button>
+            <hr />
+            <div className="side-scroll">
+              {[...participants.entries()].map(([id, meta]) => (
+                <div className="participant-row" key={id}>
+                  <span style={{flex:1, overflow:'hidden', textOverflow:'ellipsis'}} title={id}>{meta.displayName || id.slice(0,6)}{meta.isHost && ' ⭐'}</span>
+                  <input className="mini-input" type="number" value={scores[id] ?? ''} onChange={e => updateScore(id, e.target.value)} placeholder="score" />
+                  <button className="secondary" onClick={() => toggleMute(id, true)} title="Mute">M</button>
+                  <button className="secondary" onClick={() => toggleMute(id, false)} title="Unmute">U</button>
+                  <button className={spotlight===id? 'warning':'secondary'} onClick={() => setSpotlightTarget(id)} title="Spotlight">★</button>
+                </div>
+              ))}
+            </div>
+            <div style={{fontSize:11, opacity:.5, marginTop:8}}>Peers: {participants.size} · PCs: {pcRef.current.size}</div>
+        </div>
+        <div>
+          <div ref={gridRef} className="grid-videos" />
+        </div>
       </div>
-
-      <div ref={gridRef} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }} />
-      
-      <div style={{ marginTop: 16, fontSize: '0.9em', opacity: 0.6 }}>
-        <p>Active connections: {pcRef.current.size}</p>
-        <p>My ID: {me || 'Not connected'}</p>
-      </div>
+      {announcement && <div className="announcement-banner">{announcement}</div>}
+      {Object.keys(scores).length>0 && (
+        <div className="scoreboard-overlay panel">
+          <h4>Scores</h4>
+          {Object.entries(scores).sort((a,b)=> (b[1]??0)-(a[1]??0)).map(([id, sc]) => {
+            const meta = participants.get(id) || {}
+            return <div key={id} style={{display:'flex', justifyContent:'space-between', fontSize:12, padding:'2px 0'}}><span style={{maxWidth:130, overflow:'hidden', textOverflow:'ellipsis'}} title={meta.displayName||id}>{meta.displayName||id.slice(0,6)}</span><strong>{sc}</strong></div>
+          })}
+        </div>
+      )}
     </div>
   )
 }
