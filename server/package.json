@@ -1,0 +1,10 @@
+{
+  "name": "gameshow-root",
+  "private": true,
+  "scripts": {
+    "dev": "node server.js"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.0"
+  }
+}

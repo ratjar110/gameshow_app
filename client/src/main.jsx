@@ -1,0 +1,18 @@
+import React from 'react'
+import { createRoot } from 'react-dom/client'
+import { createBrowserRouter, RouterProvider } from 'react-router-dom'
+import App from './App'
+import Room from './pages/Room'
+import Host from './pages/Host'
+
+const router = createBrowserRouter([
+  { path: '/', element: <App /> },
+  { path: '/room/:roomId', element: <Room /> },
+  { path: '/host/:roomId', element: <Host /> },
+])
+
+createRoot(document.getElementById('root')).render(
+  <React.StrictMode>
+    <RouterProvider router={router} />
+  </React.StrictMode>
+)
