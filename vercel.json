@@ -5,8 +5,7 @@
   "functions": {
     "api/ws.js": { "runtime": "edge" }
   },
-  "routes": [
-    { "src": "/api/ws", "dest": "/api/ws.js" },
-    { "src": "/(.*)", "dest": "/index.html" }
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
   ]
 }

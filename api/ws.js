@@ -10,10 +10,13 @@ function getRoomMeta(roomId) { if (!roomsMeta.has(roomId)) roomsMeta.set(roomId,
 function broadcast(roomId, data, { exclude } = {}) { const room = rooms.get(roomId); if (!room) return; const payload = JSON.stringify(data); for (const [cid, sock] of room.entries()) { if (exclude && cid === exclude) continue; try { sock.send(payload) } catch {} } }
 
 export default function handler(req) {
-  if (req.headers.get('upgrade') !== 'websocket') return new Response('Expected WebSocket', { status: 400 })
+  if (req.headers.get('upgrade') !== 'websocket') {
+    return new Response('OK (non-upgrade request to /api/ws)', { status: 200 })
+  }
   const pair = new WebSocketPair(); const client = pair[0]; const server = pair[1]
   let clientId = crypto.randomUUID(); let roomId = null; let displayName = null; let isHost = false
   server.accept()
+  try { console.log('[ws] accepted', clientId) } catch {}
   server.addEventListener('message', (event) => {
     try {
       const { type, payload } = JSON.parse(event.data)
