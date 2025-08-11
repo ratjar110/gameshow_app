@@ -1,0 +1,8 @@
+{
+  "name": "gameshow-monorepo",
+  "private": true,
+  "scripts": {
+    "build": "npm --prefix client install && npm --prefix client run build && echo '{\"version\":1}' > client/dist/.vercel_build_output.json && cp client/dist/index.html client/dist/200.html",
+    "dev": "npm --prefix client run dev"
+  }
+}
