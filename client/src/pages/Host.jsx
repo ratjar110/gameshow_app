@@ -504,12 +504,17 @@ export default function Host() {
   function assignGroup(id, groupName) {
     setGroups(prev => {
       const next = { ...prev, [id]: groupName || undefined }
+      // broadcast immediately
+      queueMicrotask(() => sendHostEvent('GROUPS_UPDATE', { groups: next }))
       return next
     })
   }
 
-  function broadcastGroups() {
-    sendHostEvent('GROUPS_UPDATE', { groups })
+  function addGroup(name) {
+    const trimmed = name.trim()
+    if (!trimmed) return
+    // Force a state update (no direct mapping needed yet); broadcast unchanged mapping
+    setGroups(prev => { const next = { ...prev }; queueMicrotask(() => sendHostEvent('GROUPS_UPDATE', { groups: next })); return next })
   }
 
   // Small reusable icon toggle button for compact participant bar
@@ -580,8 +585,7 @@ export default function Host() {
             </div>
             <div style={{display:'flex', gap:4, marginTop:8}}>
               <input className="mini-input" placeholder="new group" value={newGroupName} onChange={e=> setNewGroupName(e.target.value)} style={{flex:1}} />
-              <button className="secondary" disabled={!newGroupName.trim()} onClick={()=> { if(!newGroupName.trim()) return; setGroups(prev=> { const next={...prev}; return next }); setNewGroupName('') }}>Add</button>
-              <button className="secondary" onClick={broadcastGroups}>Sync</button>
+              <button className="secondary" disabled={!newGroupName.trim()} onClick={()=> { addGroup(newGroupName); setNewGroupName('') }}>Add</button>
             </div>
             <div style={{fontSize:11, opacity:.5, marginTop:4}}>Peers: {participants.size} · PCs: {pcRef.current.size}</div>
         </div>
