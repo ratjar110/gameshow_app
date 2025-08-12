@@ -22,8 +22,10 @@ export default function handler(req) {
       const { type, payload } = JSON.parse(event.data)
       if (type === 'JOIN') {
         roomId = payload.roomId; displayName = payload.displayName || 'Guest'; isHost = !!payload.isHost
-        const room = getRoom(roomId); const meta = getRoomMeta(roomId); room.set(clientId, server); meta.set(clientId, { displayName, isHost })
-        const peers = Array.from(meta.entries()).filter(([id]) => id !== clientId).map(([id, info]) => ({ id, displayName: info.displayName, isHost: info.isHost }))
+        const room = getRoom(roomId); const meta = getRoomMeta(roomId); room.set(clientId, server); meta.set(clientId, { displayName, isHost, group: null })
+        const peers = Array.from(meta.entries())
+          .filter(([id]) => id !== clientId)
+            .map(([id, info]) => ({ id, displayName: info.displayName, isHost: info.isHost, group: info.group || null }))
         try { server.send(JSON.stringify({ type: 'PEERS', payload: { clientId, peers } })) } catch {}
         broadcast(roomId, { type: 'PEER_JOINED', payload: { clientId, displayName, isHost } }, { exclude: clientId }); return
       }
@@ -38,6 +40,14 @@ export default function handler(req) {
             broadcast(roomId, { type: 'HOST_EVENT', payload: { fromId: clientId, event: payload.event === 'MUTE_ALL' ? 'MUTE' : 'UNMUTE', data: { targetId: id } } })
           }
           return
+        }
+        // Persist group assignments
+        if (payload.event === 'GROUPS_UPDATE' && payload.data?.groups) {
+          const meta = getRoomMeta(roomId)
+          for (const [pid, grp] of Object.entries(payload.data.groups)) {
+            const entry = meta.get(pid)
+            if (entry) entry.group = grp
+          }
         }
         // Screen share events should be private to the target
         if (payload.event === 'REQUEST_SCREEN_SHARE' || payload.event === 'STOP_SCREEN_SHARE') {
