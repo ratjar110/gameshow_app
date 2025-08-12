@@ -7,7 +7,7 @@ const server = createServer();
 const wss = new WebSocketServer({ server });
 
 const rooms = new Map();
-const roomsMeta = new Map(); // roomId -> Map(clientId -> { displayName, isHost })
+const roomsMeta = new Map(); // roomId -> Map(clientId -> { displayName, isHost, group })
 
 function getRoom(roomId) {
   if (!rooms.has(roomId)) rooms.set(roomId, new Map());
@@ -46,11 +46,11 @@ wss.on('connection', (ws) => {
         const room = getRoom(roomId);
         const meta = getRoomMeta(roomId);
         room.set(clientId, ws);
-        meta.set(clientId, { displayName, isHost });
+  meta.set(clientId, { displayName, isHost, group: null });
 
         const peers = Array.from(meta.entries())
           .filter(([id]) => id !== clientId)
-          .map(([id, info]) => ({ id, displayName: info.displayName, isHost: info.isHost }));
+          .map(([id, info]) => ({ id, displayName: info.displayName, isHost: info.isHost, group: info.group || null }));
 
         ws.send(JSON.stringify({ type: 'PEERS', payload: { clientId, peers } }));
 
@@ -77,10 +77,37 @@ wss.on('connection', (ws) => {
       }
 
       if (type === 'HOST_EVENT' && isHost) {
-        broadcast(roomId, {
-          type: 'HOST_EVENT',
-          payload: { fromId: clientId, event: payload.event, data: payload.data },
-        });
+        // Expand MUTE_ALL / UNMUTE_ALL into individual events
+        if (payload.event === 'MUTE_ALL' || payload.event === 'UNMUTE_ALL') {
+          const meta = getRoomMeta(roomId);
+          for (const [id, info] of meta.entries()) {
+            if (info.isHost) continue;
+            broadcast(roomId, { type: 'HOST_EVENT', payload: { fromId: clientId, event: payload.event === 'MUTE_ALL' ? 'MUTE' : 'UNMUTE', data: { targetId: id } } });
+          }
+          return;
+        }
+        // Persist group assignments
+        if (payload.event === 'GROUPS_UPDATE' && payload.data?.groups) {
+          const meta = getRoomMeta(roomId);
+          for (const [pid, grp] of Object.entries(payload.data.groups)) {
+            const entry = meta.get(pid);
+            if (entry) entry.group = grp;
+          }
+        }
+        // Make screen share events private to the target
+        if (payload.event === 'REQUEST_SCREEN_SHARE' || payload.event === 'STOP_SCREEN_SHARE') {
+          const targetId = payload.data?.targetId;
+            if (targetId) {
+              const room = getRoom(roomId);
+              const targetSock = room.get(targetId);
+              if (targetSock && targetSock.readyState === 1) {
+                targetSock.send(JSON.stringify({ type: 'HOST_EVENT', payload: { fromId: clientId, event: payload.event, data: payload.data } }));
+              }
+            }
+            return;
+        }
+        // Pass through other events
+        broadcast(roomId, { type: 'HOST_EVENT', payload: { fromId: clientId, event: payload.event, data: payload.data } });
         return;
       }
     } catch (e) {
