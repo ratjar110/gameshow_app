@@ -55,17 +55,17 @@ export default function handler(req) {
         const room = getRoom(roomId)
         const meta = getRoomMeta(roomId)
         room.set(clientId, server)
-        meta.set(clientId, { displayName, isHost })
+  meta.set(clientId, { displayName, isHost, group: null })
 
         const peers = Array.from(meta.entries())
           .filter(([id]) => id !== clientId)
-          .map(([id, info]) => ({ id, displayName: info.displayName, isHost: info.isHost }))
+          .map(([id, info]) => ({ id, displayName: info.displayName, isHost: info.isHost, group: info.group || null }))
 
         try {
           server.send(JSON.stringify({ type: 'PEERS', payload: { clientId, peers } }))
         } catch {}
 
-        broadcast(roomId, { type: 'PEER_JOINED', payload: { clientId, displayName, isHost } }, { exclude: clientId })
+  broadcast(roomId, { type: 'PEER_JOINED', payload: { clientId, displayName, isHost } }, { exclude: clientId })
         return
       }
 
@@ -82,6 +82,14 @@ export default function handler(req) {
       }
 
       if (type === 'HOST_EVENT' && isHost) {
+        // If groups update, persist to meta so new joiners receive current mapping
+        if (payload.event === 'GROUPS_UPDATE' && payload.data?.groups) {
+          const meta = getRoomMeta(roomId)
+          for (const [pid, grp] of Object.entries(payload.data.groups)) {
+            const entry = meta.get(pid)
+            if (entry) entry.group = grp
+          }
+        }
         broadcast(roomId, { type: 'HOST_EVENT', payload: { fromId: clientId, event: payload.event, data: payload.data } })
         return
       }

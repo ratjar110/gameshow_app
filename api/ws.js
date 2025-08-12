@@ -11,7 +11,7 @@ function broadcast(roomId, data, { exclude } = {}) { const room = rooms.get(room
 
 export default function handler(req) {
   if (req.headers.get('upgrade') !== 'websocket') {
-    return new Response('OK (non-upgrade request to /api/ws)', { status: 200 })
+    return new Response('Expected WebSocket upgrade', { status: 400 })
   }
   const pair = new WebSocketPair(); const client = pair[0]; const server = pair[1]
   let clientId = crypto.randomUUID(); let roomId = null; let displayName = null; let isHost = false
@@ -29,7 +29,30 @@ export default function handler(req) {
       }
       if (!roomId) return
       if (type === 'SIGNAL') { const { targetId, data } = payload; const room = getRoom(roomId); const target = room.get(targetId); if (target) { try { target.send(JSON.stringify({ type: 'SIGNAL', payload: { fromId: clientId, data } })) } catch {} } return }
-      if (type === 'HOST_EVENT' && isHost) { broadcast(roomId, { type: 'HOST_EVENT', payload: { fromId: clientId, event: payload.event, data: payload.data } }); return }
+      if (type === 'HOST_EVENT' && isHost) {
+        // Normalize certain convenience events
+        if (payload.event === 'MUTE_ALL' || payload.event === 'UNMUTE_ALL') {
+          const meta = getRoomMeta(roomId)
+          for (const [id, info] of meta.entries()) {
+            if (info.isHost) continue
+            broadcast(roomId, { type: 'HOST_EVENT', payload: { fromId: clientId, event: payload.event === 'MUTE_ALL' ? 'MUTE' : 'UNMUTE', data: { targetId: id } } })
+          }
+          return
+        }
+        // Screen share events should be private to the target
+        if (payload.event === 'REQUEST_SCREEN_SHARE' || payload.event === 'STOP_SCREEN_SHARE') {
+          const targetId = payload.data?.targetId
+          if (targetId) {
+            const room = getRoom(roomId)
+            const targetSock = room.get(targetId)
+            if (targetSock) { try { targetSock.send(JSON.stringify({ type: 'HOST_EVENT', payload: { fromId: clientId, event: payload.event, data: payload.data } })) } catch {} }
+          }
+          return
+        }
+        // Pass-through other host control events (HIDE_CAM, SHOW_CAM, MUTE, UNMUTE, etc.)
+        broadcast(roomId, { type: 'HOST_EVENT', payload: { fromId: clientId, event: payload.event, data: payload.data } });
+        return
+      }
     } catch (e) { console.error('Edge WS bad message', e) }
   })
   function cleanup() { if (!roomId) return; const room = getRoom(roomId); const meta = getRoomMeta(roomId); room.delete(clientId); meta.delete(clientId); broadcast(roomId, { type: 'PEER_LEFT', payload: { clientId } }); if (room.size === 0) { rooms.delete(roomId); roomsMeta.delete(roomId) } }

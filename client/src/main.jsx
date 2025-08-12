@@ -10,7 +10,11 @@ const router = createBrowserRouter([
   { path: '/', element: <App /> },
   { path: '/room/:roomId', element: <Room /> },
   { path: '/host/:roomId', element: <Host /> },
-])
+], {
+  future: {
+    v7_startTransition: true
+  }
+})
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>
